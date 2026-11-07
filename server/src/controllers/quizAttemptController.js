@@ -121,8 +121,71 @@ const getQuizHistory = async (req, res) => {
         });
     }
 };
+// Get daily and weekly progress
+const getDailyProgress = async (req, res) => {
+    try {
+        const now = new Date();
+
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const startOfWeek = new Date(startOfToday);
+        const day = (startOfWeek.getDay() + 6) % 7;
+        startOfWeek.setDate(startOfWeek.getDate() - day);
+
+        const attempts = await QuizAttempt.find({
+            createdAt: {$gte: startOfWeek},
+        }).lean();
+
+        const todayAttempts = attempts.filter(
+            (a) => new Date(a.createdAt) >= startOfToday,
+        );
+
+        const sum = (items, field) =>
+            items.reduce((total, item) => total + item[field], 0);
+
+        const weeklyActivity = Array.from({length: 7}, (_, index) => {
+            const date = new Date(startOfWeek);
+            date.setDate(date.getDate() + index);
+
+            const dailyAttempts = attempts.filter((a) => {
+                const created = new Date(a.createdAt);
+                return created.toDateString() === date.toDateString();
+            });
+
+            return {
+                day: date.toLocaleDateString("en-US", {weekday: "short"}),
+                value: sum(dailyAttempts, "totalQuestions"),
+            };
+        });
+
+        const totalQuestions = sum(attempts, "totalQuestions");
+        const correctAnswers = sum(attempts, "correctAnswers");
+        const todayCompleted = sum(todayAttempts, "totalQuestions");
+
+        res.json({
+            success: true,
+            todayCompleted,
+            dailyGoal: 10,
+            totalQuestions,
+            correctAnswers,
+            accuracy: totalQuestions
+                ? Math.round((correctAnswers / totalQuestions) * 100)
+                : 0,
+            durationSeconds: sum(attempts, "durationSeconds"),
+            weeklyActivity,
+        });
+    } catch (error) {
+        console.error("Daily progress error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Unable to fetch daily progress.",
+        });
+    }
+};
 
 module.exports = {
     saveQuizAttempt,
     getQuizHistory,
+    getDailyProgress,
 };
